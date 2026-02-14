@@ -7,6 +7,9 @@ import os
 import numpy as np
 from sklearn.metrics import accuracy_score, confusion_matrix, classification_report, f1_score, precision_score, recall_score, roc_auc_score, matthews_corrcoef, roc_curve
 
+# --- FIX FOR LARGE DATAFRAME ERROR ---
+pd.set_option("styler.render.max_elements", 1_000_000)
+
 # --- PAGE CONFIGURATION ---
 st.set_page_config(
     page_title="Airline Satisfaction AI",
@@ -21,6 +24,7 @@ def get_test_data():
     file_path = "test_data.csv"
     if os.path.exists(file_path):
         df_test = pd.read_csv(file_path)
+        # Return a sample for quick testing
         return df_test.head(100).to_csv(index=False).encode('utf-8')
     return None
 
@@ -71,6 +75,7 @@ if uploaded_file is not None:
         # Encode
         for col, le in label_encoders.items():
             if col in df_clean.columns and col != 'satisfaction':
+                # Handle new/unknown categories safely
                 df_clean[col] = df_clean[col].apply(lambda x: le.transform([x])[0] if x in le.classes_ else -1)
 
         # Separate Target
@@ -89,11 +94,10 @@ if uploaded_file is not None:
         # Get Probabilities (Confidence Scores)
         if hasattr(model, "predict_proba"):
             y_prob = model.predict_proba(X_scaled)[:, 1] # Prob of class 1
-            # Calculate Confidence (Highest probability)
             confidence = np.max(model.predict_proba(X_scaled), axis=1)
         else:
             y_prob = y_pred
-            confidence = np.ones(len(y_pred)) # If model doesn't support proba, assume 100%
+            confidence = np.ones(len(y_pred))
 
         # --- METRICS ROW ---
         if has_truth:
@@ -113,7 +117,6 @@ if uploaded_file is not None:
         st.divider()
 
         # --- VISUALS SECTION ---
-        # We add ROC Curve here as the "Extra" thing
         st.subheader("📈 Visual Analysis")
         tab1, tab2, tab3 = st.tabs(["📉 Confusion Matrix & ROC", "📑 Classification Report", "🔮 Detailed Predictions"])
 
@@ -133,10 +136,10 @@ if uploaded_file is not None:
                 else:
                     st.info("Upload data with 'satisfaction' column to see Confusion Matrix.")
             
-            # ROC Curve (The New Extra Thing!)
+            # ROC Curve
             with col_g2:
                 if has_truth and len(set(y_true)) > 1:
-                    st.write("**ROC Curve (True Positive vs False Positive)**")
+                    st.write("**ROC Curve**")
                     fpr, tpr, _ = roc_curve(y_true, y_prob)
                     fig_roc, ax_roc = plt.subplots()
                     ax_roc.plot(fpr, tpr, color='darkorange', lw=2, label=f'AUC = {roc_auc_score(y_true, y_prob):.2f}')
@@ -169,11 +172,10 @@ if uploaded_file is not None:
             # Enhance DataFrame
             target_encoder = label_encoders['satisfaction']
             df['Predicted Status'] = target_encoder.inverse_transform(y_pred)
-            df['Confidence'] = [f"{c:.2%}" for c in confidence] # Format as percentage
+            df['Confidence'] = [f"{c:.2%}" for c in confidence]
             
             if has_truth:
                 df['Actual Status'] = df['satisfaction']
-                # Create a "Match" column
                 df['Match'] = df['Actual Status'] == df['Predicted Status']
                 
                 # Filter Options
@@ -189,15 +191,17 @@ if uploaded_file is not None:
                 df_view = df
                 view_cols = ['Predicted Status', 'Confidence'] + [c for c in df.columns if c not in ['Predicted Status', 'Confidence']]
             
-            # Show DataFrame with Colors
+            # Styling Helper
             def highlight_match(row):
                 if 'Match' in row:
-                    return ['background-color: #d4edda' if row['Match'] else 'background-color: #f8d7da'] * len(row)
+                    return ['background-color: #d4edda; color: black' if row['Match'] else 'background-color: #f8d7da; color: black'] * len(row)
                 return [''] * len(row)
 
-            st.dataframe(df_view[view_cols].style.apply(highlight_match, axis=1), use_container_width=True)
+            # LIMIT VIEW TO TOP 1000 ROWS TO PREVENT CRASHING
+            st.caption(f"Showing top 1,000 rows of {len(df_view)} total. Download full CSV below for complete results.")
+            st.dataframe(df_view.head(1000)[view_cols].style.apply(highlight_match, axis=1), use_container_width=True)
             
-            # Download Results
+            # Download Results (FULL DATASET)
             csv_res = df.to_csv(index=False).encode('utf-8')
             st.download_button("⬇️ Download Detailed Results CSV", csv_res, "detailed_predictions.csv", "text/csv")
 
