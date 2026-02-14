@@ -53,9 +53,9 @@ if uploaded_file is not None:
         # 1. Load Data
         df = pd.read_csv(uploaded_file)
         
-        # --- PREVIEW SECTION ---
-        with st.expander("👀 View Uploaded Data (First 5 Rows)", expanded=False):
-            st.dataframe(df.head(), use_container_width=True)
+        # --- PREVIEW SECTION (OPEN BY DEFAULT) ---
+        st.subheader("👀 Dataset Preview")
+        st.dataframe(df.head(), use_container_width=True)
 
         # 2. Preprocessing
         df_clean = df.drop(['Unnamed: 0', 'id'], axis=1, errors='ignore')
@@ -101,7 +101,8 @@ if uploaded_file is not None:
 
         # --- METRICS ROW ---
         if has_truth:
-            st.subheader(f"📊 Performance: {model_name}")
+            st.divider()
+            st.subheader(f"📊 Performance Metrics: {model_name}")
             cols = st.columns(6)
             metrics = [
                 ("Accuracy", accuracy_score(y_true, y_pred)),
@@ -116,59 +117,60 @@ if uploaded_file is not None:
 
         st.divider()
 
-        # --- VISUALS SECTION ---
+        # --- VISUAL ANALYSIS (ALWAYS VISIBLE - NO TABS) ---
         st.subheader("📈 Visual Analysis")
-        tab1, tab2, tab3 = st.tabs(["📉 Confusion Matrix & ROC", "📑 Classification Report", "🔮 Detailed Predictions"])
+        col_g1, col_g2 = st.columns(2)
+        
+        # 1. Confusion Matrix (Left)
+        with col_g1:
+            if has_truth:
+                st.write("**Confusion Matrix**")
+                cm = confusion_matrix(y_true, y_pred)
+                fig, ax = plt.subplots()
+                # Clean, professional heatmap
+                sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', linewidths=0.5, linecolor='gray', ax=ax)
+                plt.ylabel('Actual Label')
+                plt.xlabel('Predicted Label')
+                st.pyplot(fig)
+            else:
+                st.info("Upload data with 'satisfaction' column to see Confusion Matrix.")
+        
+        # 2. ROC Curve (Right)
+        with col_g2:
+            if has_truth and len(set(y_true)) > 1:
+                st.write("**ROC Curve**")
+                fpr, tpr, _ = roc_curve(y_true, y_prob)
+                fig_roc, ax_roc = plt.subplots()
+                ax_roc.plot(fpr, tpr, color='darkorange', lw=2, label=f'AUC = {roc_auc_score(y_true, y_prob):.2f}')
+                ax_roc.plot([0, 1], [0, 1], color='navy', lw=2, linestyle='--')
+                ax_roc.set_xlim([0.0, 1.0])
+                ax_roc.set_ylim([0.0, 1.05])
+                ax_roc.set_xlabel('False Positive Rate')
+                ax_roc.set_ylabel('True Positive Rate')
+                ax_roc.legend(loc="lower right")
+                st.pyplot(fig_roc)
+            else:
+                st.write("**Prediction Confidence Distribution**")
+                fig_hist, ax_hist = plt.subplots()
+                ax_hist.hist(confidence, bins=20, color='skyblue', edgecolor='black')
+                ax_hist.set_xlabel('Model Confidence')
+                ax_hist.set_ylabel('Count')
+                st.pyplot(fig_hist)
+
+        st.divider()
+
+        # --- DETAILED ANALYSIS (TABS) ---
+        st.subheader("📝 Detailed Analysis")
+        tab1, tab2 = st.tabs(["📑 Classification Report", "🔮 Detailed Prediction Table"])
 
         with tab1:
-            col_g1, col_g2 = st.columns(2)
-            
-            # Confusion Matrix
-            with col_g1:
-                if has_truth:
-                    st.write("**Confusion Matrix**")
-                    cm = confusion_matrix(y_true, y_pred)
-                    fig, ax = plt.subplots()
-                    sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', linewidths=0.5, linecolor='gray', ax=ax)
-                    plt.ylabel('Actual Label')
-                    plt.xlabel('Predicted Label')
-                    st.pyplot(fig)
-                else:
-                    st.info("Upload data with 'satisfaction' column to see Confusion Matrix.")
-            
-            # ROC Curve
-            with col_g2:
-                if has_truth and len(set(y_true)) > 1:
-                    st.write("**ROC Curve**")
-                    fpr, tpr, _ = roc_curve(y_true, y_prob)
-                    fig_roc, ax_roc = plt.subplots()
-                    ax_roc.plot(fpr, tpr, color='darkorange', lw=2, label=f'AUC = {roc_auc_score(y_true, y_prob):.2f}')
-                    ax_roc.plot([0, 1], [0, 1], color='navy', lw=2, linestyle='--')
-                    ax_roc.set_xlim([0.0, 1.0])
-                    ax_roc.set_ylim([0.0, 1.05])
-                    ax_roc.set_xlabel('False Positive Rate')
-                    ax_roc.set_ylabel('True Positive Rate')
-                    ax_roc.legend(loc="lower right")
-                    st.pyplot(fig_roc)
-                else:
-                    st.write("**Prediction Confidence Distribution**")
-                    fig_hist, ax_hist = plt.subplots()
-                    ax_hist.hist(confidence, bins=20, color='skyblue', edgecolor='black')
-                    ax_hist.set_xlabel('Model Confidence')
-                    ax_hist.set_ylabel('Count')
-                    st.pyplot(fig_hist)
-
-        with tab2:
             if has_truth:
-                st.write("**Detailed Classification Report**")
                 report = classification_report(y_true, y_pred, output_dict=True)
                 st.dataframe(pd.DataFrame(report).transpose().style.background_gradient(cmap='Blues'))
             else:
                 st.info("Report available only when ground truth is provided.")
 
-        with tab3:
-            st.write("**Detailed Prediction Analysis**")
-            
+        with tab2:
             # Enhance DataFrame
             target_encoder = label_encoders['satisfaction']
             df['Predicted Status'] = target_encoder.inverse_transform(y_pred)
