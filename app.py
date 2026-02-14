@@ -10,30 +10,22 @@ from sklearn.metrics import accuracy_score, confusion_matrix, classification_rep
 st.set_page_config(
     page_title="Airline Satisfaction AI",
     page_icon="✈️",
-    layout="wide",
-    initial_sidebar_state="expanded"
+    layout="wide"
 )
 
-# --- CUSTOM CSS FOR UI POLISH ---
+# --- CUSTOM CSS ---
 st.markdown("""
     <style>
-    .metric-container {
-        background-color: #f0f2f6;
-        padding: 10px;
-        border-radius: 10px;
-        text-align: center;
-    }
-    div[data-testid="stMetricValue"] {
-        font-size: 24px;
-        color: #007bff;
-    }
+    .main { padding-top: 2rem; }
+    .stTabs [data-baseweb="tab-list"] { gap: 10px; }
+    .stTabs [data-baseweb="tab"] { height: 50px; white-space: pre-wrap; background-color: #f0f2f6; border-radius: 4px 4px 0px 0px; gap: 1px; padding-top: 10px; padding-bottom: 10px; }
+    .stTabs [aria-selected="true"] { background-color: #ffffff; border-bottom: 2px solid #4CAF50; }
     </style>
     """, unsafe_allow_html=True)
 
 st.title("✈️ Airline Passenger Satisfaction AI")
-st.markdown("### Intelligent Passenger Classification System")
 
-# --- EVALUATOR HELPER: DOWNLOAD TEST DATA ---
+# --- EVALUATOR HELPER ---
 def get_test_data():
     file_path = "test_data.csv"
     if os.path.exists(file_path):
@@ -42,28 +34,22 @@ def get_test_data():
     return None
 
 test_csv = get_test_data()
-
-# Helper button layout
-col_help, _ = st.columns([1, 4])
-with col_help:
-    if test_csv:
-        st.download_button(
-            label="⬇️ Download Test CSV",
-            data=test_csv,
-            file_name="test_data_sample.csv",
-            mime="text/csv",
-            help="Download a sample file to test this app immediately."
-        )
+if test_csv:
+    st.download_button(
+        label="⬇️ Download Test Data (For Evaluators)",
+        data=test_csv,
+        file_name="test_data_sample.csv",
+        mime="text/csv",
+    )
 
 st.divider()
 
 # --- SIDEBAR ---
-st.sidebar.header("⚙️ Configuration")
+st.sidebar.header("⚙️ Control Panel")
 model_name = st.sidebar.selectbox(
     "Select Model",
     ["XGBoost", "Random Forest", "Logistic Regression", "Decision Tree", "KNN", "Naive Bayes"]
 )
-
 uploaded_file = st.sidebar.file_uploader("Upload Passenger Data (CSV)", type=["csv"])
 
 # --- MAIN LOGIC ---
@@ -72,6 +58,10 @@ if uploaded_file is not None:
         # 1. Load Data
         df = pd.read_csv(uploaded_file)
         
+        # --- PREVIEW SECTION (ON TOP) ---
+        with st.expander("👀 Dataset Preview (First 5 Rows)", expanded=True):
+            st.dataframe(df.head(), use_container_width=True)
+
         # 2. Preprocessing
         df_clean = df.drop(['Unnamed: 0', 'id'], axis=1, errors='ignore')
         if 'Arrival Delay in Minutes' in df_clean.columns:
@@ -81,11 +71,13 @@ if uploaded_file is not None:
         try:
             label_encoders = joblib.load('model/label_encoders.pkl')
             scaler = joblib.load('model/scaler.pkl')
+            model_filename = f"model/{model_name.replace(' ', '_')}.pkl"
+            model = joblib.load(model_filename)
         except FileNotFoundError:
-            st.error("❌ Critical Error: Model files not found in 'model/' folder.")
+            st.error("❌ Error: Model files missing. Check 'model/' folder in GitHub.")
             st.stop()
 
-        # Encode Categorical Cols
+        # Encode
         for col, le in label_encoders.items():
             if col in df_clean.columns and col != 'satisfaction':
                 df_clean[col] = df_clean[col].apply(lambda x: le.transform([x])[0] if x in le.classes_ else -1)
@@ -99,107 +91,85 @@ if uploaded_file is not None:
             X = df_clean
             has_truth = False
 
-        # Scale
+        # Scale & Predict
         X_scaled = scaler.transform(X)
-
-        # 3. Load Model & Predict (AUTOMATIC)
-        model_filename = f"model/{model_name.replace(' ', '_')}.pkl"
-        model = joblib.load(model_filename)
-        
-        # Predictions
         y_pred = model.predict(X_scaled)
         
-        # Get Probabilities for AUC (if supported)
+        # Get Probabilities
         if hasattr(model, "predict_proba"):
             y_prob = model.predict_proba(X_scaled)[:, 1]
         else:
             y_prob = y_pred
 
-        # --- UI: METRICS SECTION ---
+        # --- METRICS ROW ---
         if has_truth:
-            st.subheader("📊 Model Performance")
-            
-            # Calculate all 6 metrics
-            acc = accuracy_score(y_true, y_pred)
-            f1 = f1_score(y_true, y_pred, average='weighted')
-            prec = precision_score(y_true, y_pred, average='weighted')
-            rec = recall_score(y_true, y_pred, average='weighted')
-            auc = roc_auc_score(y_true, y_prob) if len(set(y_true)) > 1 else 0
-            mcc = matthews_corrcoef(y_true, y_pred)
+            st.subheader(f"📊 Performance: {model_name}")
+            cols = st.columns(6)
+            metrics = [
+                ("Accuracy", accuracy_score(y_true, y_pred)),
+                ("F1 Score", f1_score(y_true, y_pred, average='weighted')),
+                ("Precision", precision_score(y_true, y_pred, average='weighted')),
+                ("Recall", recall_score(y_true, y_pred, average='weighted')),
+                ("AUC", roc_auc_score(y_true, y_prob) if len(set(y_true)) > 1 else 0),
+                ("MCC", matthews_corrcoef(y_true, y_pred))
+            ]
+            for col, (label, val) in zip(cols, metrics):
+                col.metric(label, f"{val:.1%}" if label == "Accuracy" else f"{val:.3f}")
 
-            # Display Horizontally
-            m1, m2, m3, m4, m5, m6 = st.columns(6)
-            m1.metric("Accuracy", f"{acc:.1%}")
-            m2.metric("F1 Score", f"{f1:.3f}")
-            m3.metric("Precision", f"{prec:.3f}")
-            m4.metric("Recall", f"{rec:.3f}")
-            m5.metric("AUC Score", f"{auc:.3f}")
-            m6.metric("MCC", f"{mcc:.3f}")
-            
-            st.divider()
-
-            # --- UI: GRAPHS SECTION ---
-            g1, g2 = st.columns([3, 2])
-            
-            with g1:
-                st.subheader("Confusion Matrix")
-                cm = confusion_matrix(y_true, y_pred)
-                fig, ax = plt.subplots(figsize=(8, 5)) # Bigger size
-                sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', linewidths=1, linecolor='black', ax=ax)
-                plt.ylabel('Actual')
-                plt.xlabel('Predicted')
-                st.pyplot(fig)
-
-            with g2:
-                st.subheader("Classification Report")
-                report = classification_report(y_true, y_pred, output_dict=True)
-                df_report = pd.DataFrame(report).transpose()
-                st.dataframe(df_report.style.format("{:.2f}"))
-
-        # --- UI: PREDICTIONS SECTION ---
         st.divider()
-        st.subheader("🔮 Prediction Results")
-        
-        # Convert numeric predictions back to text (Satisfied/Neutral)
-        # We use the inverse_transform of the target encoder
-        target_encoder = label_encoders['satisfaction']
-        df['Predicted Status'] = target_encoder.inverse_transform(y_pred)
-        
-        # Add a visual check column
-        if has_truth:
-            df['Actual Status'] = df['satisfaction']
-            df['Correct?'] = df['Actual Status'] == df['Predicted Status']
-            cols_to_show = ['Predicted Status', 'Actual Status', 'Correct?'] + [c for c in df.columns if c not in ['Predicted Status', 'Actual Status', 'Correct?', 'satisfaction']]
-        else:
-            cols_to_show = ['Predicted Status'] + [c for c in df.columns if c != 'Predicted Status']
 
-        # Show Donut Chart of Predictions
-        c1, c2 = st.columns([1, 3])
-        with c1:
-            st.markdown("**Distribution**")
-            pred_counts = df['Predicted Status'].value_counts()
-            fig_pie, ax_pie = plt.subplots()
-            ax_pie.pie(pred_counts, labels=pred_counts.index, autopct='%1.1f%%', startangle=90, colors=['#66b3ff','#ff9999'])
-            ax_pie.axis('equal')  # Equal aspect ratio ensures that pie is drawn as a circle.
-            st.pyplot(fig_pie)
+        # --- DYNAMIC TABS (THE NEW UI) ---
+        tab1, tab2, tab3 = st.tabs(["📉 Visual Analysis", "📑 Classification Report", "🔮 Detailed Predictions"])
+
+        with tab1:
+            col_g1, col_g2 = st.columns(2)
             
-        with c2:
-            st.markdown("**Detailed Data View**")
-            st.dataframe(df[cols_to_show], height=400)
+            # Confusion Matrix
+            with col_g1:
+                if has_truth:
+                    st.write("**Confusion Matrix**")
+                    cm = confusion_matrix(y_true, y_pred)
+                    fig, ax = plt.subplots()
+                    sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', ax=ax)
+                    st.pyplot(fig)
+                else:
+                    st.info("Upload data with 'satisfaction' column to see Confusion Matrix.")
             
-        # Download Button for Results
-        csv_results = df.to_csv(index=False).encode('utf-8')
-        st.download_button(
-            label="⬇️ Download Predicted Results",
-            data=csv_results,
-            file_name="airline_predictions.csv",
-            mime="text/csv"
-        )
+            # Donut Chart
+            with col_g2:
+                st.write("**Prediction Distribution**")
+                target_encoder = label_encoders['satisfaction']
+                df['Predicted Status'] = target_encoder.inverse_transform(y_pred)
+                pred_counts = df['Predicted Status'].value_counts()
+                fig_pie, ax_pie = plt.subplots()
+                ax_pie.pie(pred_counts, labels=pred_counts.index, autopct='%1.1f%%', colors=['#66b3ff','#ff9999'])
+                st.pyplot(fig_pie)
+
+        with tab2:
+            if has_truth:
+                st.write("**Detailed Classification Report**")
+                report = classification_report(y_true, y_pred, output_dict=True)
+                st.dataframe(pd.DataFrame(report).transpose().style.background_gradient(cmap='Blues'))
+            else:
+                st.info("Report available only when ground truth is provided.")
+
+        with tab3:
+            st.write("**Full Dataset with Predictions**")
+            # Create a clean view
+            if has_truth:
+                df['Actual Status'] = df['satisfaction']
+                view_cols = ['Predicted Status', 'Actual Status'] + [c for c in df.columns if c not in ['Predicted Status', 'Actual Status', 'satisfaction']]
+            else:
+                view_cols = ['Predicted Status'] + [c for c in df.columns if c != 'Predicted Status']
+            
+            st.dataframe(df[view_cols], use_container_width=True)
+            
+            # Download Results
+            csv_res = df.to_csv(index=False).encode('utf-8')
+            st.download_button("⬇️ Download Predictions CSV", csv_res, "predictions.csv", "text/csv")
 
     except Exception as e:
-        st.error(f"Processing Error: {e}")
-        st.info("Tip: Ensure your CSV has the same columns as the training data.")
+        st.error(f"Error: {e}")
 
 else:
-    # Empty State - Fancy Placeholder
-    st.info("👈 Please select a model and upload a CSV file to generate predictions automatically.")
+    st.info("👈 Upload your CSV file in the sidebar to start!")
