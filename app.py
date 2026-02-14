@@ -12,48 +12,43 @@ st.set_page_config(page_title="Airline Satisfaction App", layout="wide")
 st.title("✈️ Airline Passenger Satisfaction Classifier")
 st.markdown("""
 This app predicts whether a passenger is **Satisfied** or **Neutral/Dissatisfied**.
-Upload your test data (CSV) to see the models in action.
 """)
 
-# --- SIDEBAR: CONTROLS ---
-st.sidebar.header("User Input")
-
-# 1. Model Selection
-model_name = st.sidebar.selectbox(
-    "Choose Model",
-    ["Logistic Regression", "Decision Tree", "KNN", "Naive Bayes", "Random Forest", "XGBoost"]
-)
-
-# --- NEW: DOWNLOAD SAMPLE DATA BUTTON ---
-# This helps the evaluator test the app easily
-st.sidebar.markdown("---")
-st.sidebar.subheader("Evaluator Helper")
-
+# --- NEW: DOWNLOAD BUTTON IN MAIN UI ---
+# This block is now in the main area, not the sidebar
 def get_sample_data():
-    # We look for the training file to create a sample
-    # Make sure 'airline_data.csv' is in your GitHub repo!
     file_path = "airline_data.csv"
     if os.path.exists(file_path):
-        df_sample = pd.read_csv(file_path).sample(50, random_state=42) # Take 50 random rows
+        # Read the file and take a sample of 50 rows
+        df_sample = pd.read_csv(file_path).sample(50, random_state=42)
         return df_sample.to_csv(index=False).encode('utf-8')
     return None
 
 sample_csv = get_sample_data()
 
-if sample_csv:
-    st.sidebar.download_button(
-        label="Download Sample Test Data",
-        data=sample_csv,
-        file_name="sample_test_data.csv",
-        mime="text/csv",
-        help="Click to download a small test file to try out the app."
-    )
-else:
-    st.sidebar.warning("Training file not found. Cannot generate sample.")
+col1, col2 = st.columns([1, 2])
+with col1:
+    if sample_csv:
+        st.download_button(
+            label="⬇️ Download Sample Test Data",
+            data=sample_csv,
+            file_name="sample_test_data.csv",
+            mime="text/csv",
+            help="Download this to test the app if you don't have a file."
+        )
+    else:
+        # Debugging Message: If you see this, the file is missing!
+        st.warning("⚠️ 'airline_data.csv' not found. Please upload it to GitHub.")
 
-st.sidebar.markdown("---")
+st.markdown("---")
 
-# 2. File Uploader
+# --- SIDEBAR: CONTROLS ---
+st.sidebar.header("User Input")
+model_name = st.sidebar.selectbox(
+    "Choose Model",
+    ["Logistic Regression", "Decision Tree", "KNN", "Naive Bayes", "Random Forest", "XGBoost"]
+)
+
 uploaded_file = st.sidebar.file_uploader("Upload CSV (test.csv)", type=["csv"])
 
 # --- MAIN LOGIC ---
@@ -61,7 +56,7 @@ if uploaded_file is not None:
     try:
         # 1. Load Data
         df = pd.read_csv(uploaded_file)
-        st.write("### Data Preview")
+        st.subheader("Data Preview")
         st.dataframe(df.head())
 
         # 2. Preprocessing (MUST MATCH TRAINING EXACTLY)
@@ -73,8 +68,13 @@ if uploaded_file is not None:
             df_clean['Arrival Delay in Minutes'] = df_clean['Arrival Delay in Minutes'].fillna(df_clean['Arrival Delay in Minutes'].mean())
 
         # Load Saved Encoders & Scaler
-        label_encoders = joblib.load('model/label_encoders.pkl')
-        scaler = joblib.load('model/scaler.pkl')
+        # We use try/except to handle cases where models might be missing
+        try:
+            label_encoders = joblib.load('model/label_encoders.pkl')
+            scaler = joblib.load('model/scaler.pkl')
+        except FileNotFoundError:
+            st.error("❌ Error: Model files not found. Make sure the 'model' folder is uploaded.")
+            st.stop()
 
         # Encode Categorical Cols
         for col, le in label_encoders.items():
@@ -98,23 +98,29 @@ if uploaded_file is not None:
         # 3. Load Model
         # File name logic: "Random Forest" -> "model/Random_Forest.pkl"
         model_filename = f"model/{model_name.replace(' ', '_')}.pkl"
-        model = joblib.load(model_filename)
+        
+        try:
+            model = joblib.load(model_filename)
+        except FileNotFoundError:
+            st.error(f"❌ Error: Could not find {model_filename}. Check your GitHub 'model' folder.")
+            st.stop()
 
         # 4. Predict
         if st.button("Run Prediction"):
             y_pred = model.predict(X_scaled)
 
             # --- DISPLAY RESULTS ---
+            st.divider()
             st.subheader(f"Results: {model_name}")
 
             if has_truth:
                 # Metrics Columns
-                col1, col2, col3 = st.columns(3)
-                col1.metric("Accuracy", f"{accuracy_score(y_true, y_pred):.2%}")
-                col1.metric("F1 Score", f"{f1_score(y_true, y_pred, average='weighted'):.2f}")
+                m_col1, m_col2, m_col3 = st.columns(3)
+                m_col1.metric("Accuracy", f"{accuracy_score(y_true, y_pred):.2%}")
+                m_col1.metric("F1 Score", f"{f1_score(y_true, y_pred, average='weighted'):.2f}")
 
                 # Confusion Matrix
-                with col2:
+                with m_col2:
                     st.write("Confusion Matrix")
                     cm = confusion_matrix(y_true, y_pred)
                     fig, ax = plt.subplots(figsize=(3,3))
@@ -122,7 +128,7 @@ if uploaded_file is not None:
                     st.pyplot(fig)
 
                 # Classification Report
-                with col3:
+                with m_col3:
                     st.write("Detailed Report")
                     report = classification_report(y_true, y_pred, output_dict=True)
                     st.dataframe(pd.DataFrame(report).transpose())
@@ -136,4 +142,4 @@ if uploaded_file is not None:
     except Exception as e:
         st.error(f"Error: {e}")
 else:
-    st.info("👈 Please upload a CSV file to begin. \n\nDon't have a file? Download the sample from the sidebar!")
+    st.info("👈 Please upload a CSV file to begin.")
