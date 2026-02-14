@@ -13,16 +13,6 @@ st.set_page_config(
     layout="wide"
 )
 
-# --- CUSTOM CSS ---
-st.markdown("""
-    <style>
-    .main { padding-top: 2rem; }
-    .stTabs [data-baseweb="tab-list"] { gap: 10px; }
-    .stTabs [data-baseweb="tab"] { height: 50px; white-space: pre-wrap; background-color: #f0f2f6; border-radius: 4px 4px 0px 0px; gap: 1px; padding-top: 10px; padding-bottom: 10px; }
-    .stTabs [aria-selected="true"] { background-color: #ffffff; border-bottom: 2px solid #4CAF50; }
-    </style>
-    """, unsafe_allow_html=True)
-
 st.title("✈️ Airline Passenger Satisfaction AI")
 
 # --- EVALUATOR HELPER ---
@@ -58,8 +48,8 @@ if uploaded_file is not None:
         # 1. Load Data
         df = pd.read_csv(uploaded_file)
         
-        # --- PREVIEW SECTION (ON TOP) ---
-        with st.expander("👀 Dataset Preview (First 5 Rows)", expanded=True):
+        # --- PREVIEW SECTION ---
+        with st.expander("👀 View Uploaded Data (First 5 Rows)", expanded=False):
             st.dataframe(df.head(), use_container_width=True)
 
         # 2. Preprocessing
@@ -118,43 +108,48 @@ if uploaded_file is not None:
 
         st.divider()
 
-        # --- DYNAMIC TABS (THE NEW UI) ---
-        tab1, tab2, tab3 = st.tabs(["📉 Visual Analysis", "📑 Classification Report", "🔮 Detailed Predictions"])
+        # --- VISUALS SECTION (ALWAYS VISIBLE) ---
+        col_g1, col_g2 = st.columns(2)
+        
+        # Confusion Matrix
+        with col_g1:
+            if has_truth:
+                st.subheader("Confusion Matrix")
+                cm = confusion_matrix(y_true, y_pred)
+                fig, ax = plt.subplots()
+                # Using a dark-mode friendly colormap
+                sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', linewidths=0.5, linecolor='gray', ax=ax)
+                st.pyplot(fig)
+            else:
+                st.info("Upload data with 'satisfaction' column to see Confusion Matrix.")
+        
+        # Donut Chart
+        with col_g2:
+            st.subheader("Prediction Distribution")
+            target_encoder = label_encoders['satisfaction']
+            df['Predicted Status'] = target_encoder.inverse_transform(y_pred)
+            pred_counts = df['Predicted Status'].value_counts()
+            
+            fig_pie, ax_pie = plt.subplots()
+            # Custom colors for professional look
+            ax_pie.pie(pred_counts, labels=pred_counts.index, autopct='%1.1f%%', startangle=90, colors=['#4CAF50', '#FF5252'])
+            ax_pie.axis('equal') 
+            st.pyplot(fig_pie)
+
+        st.divider()
+
+        # --- DETAILED DATA (BELOW VISUALS) ---
+        st.subheader("📝 Detailed Analysis")
+        tab1, tab2 = st.tabs(["📑 Classification Report", "🔮 Prediction Table"])
 
         with tab1:
-            col_g1, col_g2 = st.columns(2)
-            
-            # Confusion Matrix
-            with col_g1:
-                if has_truth:
-                    st.write("**Confusion Matrix**")
-                    cm = confusion_matrix(y_true, y_pred)
-                    fig, ax = plt.subplots()
-                    sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', ax=ax)
-                    st.pyplot(fig)
-                else:
-                    st.info("Upload data with 'satisfaction' column to see Confusion Matrix.")
-            
-            # Donut Chart
-            with col_g2:
-                st.write("**Prediction Distribution**")
-                target_encoder = label_encoders['satisfaction']
-                df['Predicted Status'] = target_encoder.inverse_transform(y_pred)
-                pred_counts = df['Predicted Status'].value_counts()
-                fig_pie, ax_pie = plt.subplots()
-                ax_pie.pie(pred_counts, labels=pred_counts.index, autopct='%1.1f%%', colors=['#66b3ff','#ff9999'])
-                st.pyplot(fig_pie)
-
-        with tab2:
             if has_truth:
-                st.write("**Detailed Classification Report**")
                 report = classification_report(y_true, y_pred, output_dict=True)
-                st.dataframe(pd.DataFrame(report).transpose().style.background_gradient(cmap='Blues'))
+                st.dataframe(pd.DataFrame(report).transpose().style.format("{:.2f}"))
             else:
                 st.info("Report available only when ground truth is provided.")
 
-        with tab3:
-            st.write("**Full Dataset with Predictions**")
+        with tab2:
             # Create a clean view
             if has_truth:
                 df['Actual Status'] = df['satisfaction']
