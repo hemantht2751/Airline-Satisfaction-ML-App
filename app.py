@@ -12,39 +12,52 @@ pd.set_option("styler.render.max_elements", 1_000_000)
 
 # --- PAGE CONFIGURATION ---
 st.set_page_config(
-    page_title="Airline Satisfaction AI",
+    page_title="Airline Satisfaction",
     page_icon="✈️",
     layout="wide"
 )
 
-st.title("✈️ Airline Passenger Satisfaction AI")
+# --- MAIN HEADINGS ---
+st.markdown("### 🎓 ML Assignment 2")
+st.title("✈️ Airline Passenger Satisfaction")
 
-# --- EVALUATOR HELPER ---
+# --- SIDEBAR CONFIGURATION ---
+st.sidebar.title("ML Assignment 2")
+
+# 1. How to Use (Collapsible)
+with st.sidebar.expander("ℹ️ How to use this app", expanded=False):
+    st.write("""
+    1. **Download Test Data**: Click the button below if you need a sample file.
+    2. **Select Model**: Choose an algorithm (e.g., XGBoost).
+    3. **Upload Data**: Upload the CSV file to see predictions instantly.
+    """)
+
+st.sidebar.divider()
+
+# 2. Download Helper
 def get_test_data():
     file_path = "test_data.csv"
     if os.path.exists(file_path):
         df_test = pd.read_csv(file_path)
-        # Return a sample for quick testing
         return df_test.head(100).to_csv(index=False).encode('utf-8')
     return None
 
 test_csv = get_test_data()
 if test_csv:
-    st.download_button(
-        label="⬇️ Download Test Data (For Evaluators)",
+    st.sidebar.download_button(
+        label="⬇️ Download Test Data",
         data=test_csv,
         file_name="test_data_sample.csv",
         mime="text/csv",
     )
 
-st.divider()
-
-# --- SIDEBAR ---
-st.sidebar.header("⚙️ Control Panel")
+# 3. Model Controls
+st.sidebar.subheader("⚙️ Configuration")
 model_name = st.sidebar.selectbox(
     "Select Model",
     ["XGBoost", "Random Forest", "Logistic Regression", "Decision Tree", "KNN", "Naive Bayes"]
 )
+
 uploaded_file = st.sidebar.file_uploader("Upload Passenger Data (CSV)", type=["csv"])
 
 # --- MAIN LOGIC ---
@@ -117,7 +130,7 @@ if uploaded_file is not None:
 
         st.divider()
 
-        # --- VISUAL ANALYSIS (ALWAYS VISIBLE - NO TABS) ---
+        # --- VISUAL ANALYSIS (ALWAYS VISIBLE) ---
         st.subheader("📈 Visual Analysis")
         col_g1, col_g2 = st.columns(2)
         
