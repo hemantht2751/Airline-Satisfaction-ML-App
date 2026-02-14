@@ -4,7 +4,8 @@ import joblib
 import matplotlib.pyplot as plt
 import seaborn as sns
 import os
-from sklearn.metrics import accuracy_score, confusion_matrix, classification_report, f1_score, precision_score, recall_score, roc_auc_score, matthews_corrcoef
+import numpy as np
+from sklearn.metrics import accuracy_score, confusion_matrix, classification_report, f1_score, precision_score, recall_score, roc_auc_score, matthews_corrcoef, roc_curve
 
 # --- PAGE CONFIGURATION ---
 st.set_page_config(
@@ -85,11 +86,14 @@ if uploaded_file is not None:
         X_scaled = scaler.transform(X)
         y_pred = model.predict(X_scaled)
         
-        # Get Probabilities
+        # Get Probabilities (Confidence Scores)
         if hasattr(model, "predict_proba"):
-            y_prob = model.predict_proba(X_scaled)[:, 1]
+            y_prob = model.predict_proba(X_scaled)[:, 1] # Prob of class 1
+            # Calculate Confidence (Highest probability)
+            confidence = np.max(model.predict_proba(X_scaled), axis=1)
         else:
             y_prob = y_pred
+            confidence = np.ones(len(y_pred)) # If model doesn't support proba, assume 100%
 
         # --- METRICS ROW ---
         if has_truth:
@@ -108,60 +112,94 @@ if uploaded_file is not None:
 
         st.divider()
 
-        # --- VISUALS SECTION (ALWAYS VISIBLE) ---
-        col_g1, col_g2 = st.columns(2)
-        
-        # Confusion Matrix
-        with col_g1:
-            if has_truth:
-                st.subheader("Confusion Matrix")
-                cm = confusion_matrix(y_true, y_pred)
-                fig, ax = plt.subplots()
-                # Using a dark-mode friendly colormap
-                sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', linewidths=0.5, linecolor='gray', ax=ax)
-                st.pyplot(fig)
-            else:
-                st.info("Upload data with 'satisfaction' column to see Confusion Matrix.")
-        
-        # Donut Chart
-        with col_g2:
-            st.subheader("Prediction Distribution")
-            target_encoder = label_encoders['satisfaction']
-            df['Predicted Status'] = target_encoder.inverse_transform(y_pred)
-            pred_counts = df['Predicted Status'].value_counts()
-            
-            fig_pie, ax_pie = plt.subplots()
-            # Custom colors for professional look
-            ax_pie.pie(pred_counts, labels=pred_counts.index, autopct='%1.1f%%', startangle=90, colors=['#4CAF50', '#FF5252'])
-            ax_pie.axis('equal') 
-            st.pyplot(fig_pie)
-
-        st.divider()
-
-        # --- DETAILED DATA (BELOW VISUALS) ---
-        st.subheader("📝 Detailed Analysis")
-        tab1, tab2 = st.tabs(["📑 Classification Report", "🔮 Prediction Table"])
+        # --- VISUALS SECTION ---
+        # We add ROC Curve here as the "Extra" thing
+        st.subheader("📈 Visual Analysis")
+        tab1, tab2, tab3 = st.tabs(["📉 Confusion Matrix & ROC", "📑 Classification Report", "🔮 Detailed Predictions"])
 
         with tab1:
+            col_g1, col_g2 = st.columns(2)
+            
+            # Confusion Matrix
+            with col_g1:
+                if has_truth:
+                    st.write("**Confusion Matrix**")
+                    cm = confusion_matrix(y_true, y_pred)
+                    fig, ax = plt.subplots()
+                    sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', linewidths=0.5, linecolor='gray', ax=ax)
+                    plt.ylabel('Actual Label')
+                    plt.xlabel('Predicted Label')
+                    st.pyplot(fig)
+                else:
+                    st.info("Upload data with 'satisfaction' column to see Confusion Matrix.")
+            
+            # ROC Curve (The New Extra Thing!)
+            with col_g2:
+                if has_truth and len(set(y_true)) > 1:
+                    st.write("**ROC Curve (True Positive vs False Positive)**")
+                    fpr, tpr, _ = roc_curve(y_true, y_prob)
+                    fig_roc, ax_roc = plt.subplots()
+                    ax_roc.plot(fpr, tpr, color='darkorange', lw=2, label=f'AUC = {roc_auc_score(y_true, y_prob):.2f}')
+                    ax_roc.plot([0, 1], [0, 1], color='navy', lw=2, linestyle='--')
+                    ax_roc.set_xlim([0.0, 1.0])
+                    ax_roc.set_ylim([0.0, 1.05])
+                    ax_roc.set_xlabel('False Positive Rate')
+                    ax_roc.set_ylabel('True Positive Rate')
+                    ax_roc.legend(loc="lower right")
+                    st.pyplot(fig_roc)
+                else:
+                    st.write("**Prediction Confidence Distribution**")
+                    fig_hist, ax_hist = plt.subplots()
+                    ax_hist.hist(confidence, bins=20, color='skyblue', edgecolor='black')
+                    ax_hist.set_xlabel('Model Confidence')
+                    ax_hist.set_ylabel('Count')
+                    st.pyplot(fig_hist)
+
+        with tab2:
             if has_truth:
+                st.write("**Detailed Classification Report**")
                 report = classification_report(y_true, y_pred, output_dict=True)
-                st.dataframe(pd.DataFrame(report).transpose().style.format("{:.2f}"))
+                st.dataframe(pd.DataFrame(report).transpose().style.background_gradient(cmap='Blues'))
             else:
                 st.info("Report available only when ground truth is provided.")
 
-        with tab2:
-            # Create a clean view
+        with tab3:
+            st.write("**Detailed Prediction Analysis**")
+            
+            # Enhance DataFrame
+            target_encoder = label_encoders['satisfaction']
+            df['Predicted Status'] = target_encoder.inverse_transform(y_pred)
+            df['Confidence'] = [f"{c:.2%}" for c in confidence] # Format as percentage
+            
             if has_truth:
                 df['Actual Status'] = df['satisfaction']
-                view_cols = ['Predicted Status', 'Actual Status'] + [c for c in df.columns if c not in ['Predicted Status', 'Actual Status', 'satisfaction']]
+                # Create a "Match" column
+                df['Match'] = df['Actual Status'] == df['Predicted Status']
+                
+                # Filter Options
+                filter_option = st.radio("Filter View:", ["All Predictions", "Show Mismatches Only (Errors)"], horizontal=True)
+                
+                if filter_option == "Show Mismatches Only (Errors)":
+                    df_view = df[df['Match'] == False]
+                else:
+                    df_view = df
+                
+                view_cols = ['Predicted Status', 'Confidence', 'Actual Status', 'Match'] + [c for c in df.columns if c not in ['Predicted Status', 'Confidence', 'Actual Status', 'Match', 'satisfaction']]
             else:
-                view_cols = ['Predicted Status'] + [c for c in df.columns if c != 'Predicted Status']
+                df_view = df
+                view_cols = ['Predicted Status', 'Confidence'] + [c for c in df.columns if c not in ['Predicted Status', 'Confidence']]
             
-            st.dataframe(df[view_cols], use_container_width=True)
+            # Show DataFrame with Colors
+            def highlight_match(row):
+                if 'Match' in row:
+                    return ['background-color: #d4edda' if row['Match'] else 'background-color: #f8d7da'] * len(row)
+                return [''] * len(row)
+
+            st.dataframe(df_view[view_cols].style.apply(highlight_match, axis=1), use_container_width=True)
             
             # Download Results
             csv_res = df.to_csv(index=False).encode('utf-8')
-            st.download_button("⬇️ Download Predictions CSV", csv_res, "predictions.csv", "text/csv")
+            st.download_button("⬇️ Download Detailed Results CSV", csv_res, "detailed_predictions.csv", "text/csv")
 
     except Exception as e:
         st.error(f"Error: {e}")
