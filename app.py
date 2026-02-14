@@ -14,31 +14,33 @@ st.markdown("""
 This app predicts whether a passenger is **Satisfied** or **Neutral/Dissatisfied**.
 """)
 
-# --- NEW: DOWNLOAD BUTTON IN MAIN UI ---
-# This block is now in the main area, not the sidebar
-def get_sample_data():
-    file_path = "airline_data.csv"
+# --- EVALUATOR HELPER: DOWNLOAD TEST DATA ---
+# This button allows the evaluator to download the test dataset
+# so they can upload it back to the app and verify functionality.
+def get_test_data():
+    # Make sure you upload 'test_data.csv' to your GitHub!
+    file_path = "test_data.csv"
     if os.path.exists(file_path):
-        # Read the file and take a sample of 50 rows
-        df_sample = pd.read_csv(file_path).sample(50, random_state=42)
-        return df_sample.to_csv(index=False).encode('utf-8')
+        # We read it and convert to CSV for the download button
+        df_test = pd.read_csv(file_path)
+        # We take a sample of 100 rows to keep it lightweight, or return the whole thing
+        return df_test.head(100).to_csv(index=False).encode('utf-8')
     return None
 
-sample_csv = get_sample_data()
+test_csv = get_test_data()
 
 col1, col2 = st.columns([1, 2])
 with col1:
-    if sample_csv:
+    if test_csv:
         st.download_button(
-            label="⬇️ Download Sample Test Data",
-            data=sample_csv,
-            file_name="sample_test_data.csv",
+            label="⬇️ Download Test Data (for Evaluation)",
+            data=test_csv,
+            file_name="test_data_sample.csv",
             mime="text/csv",
-            help="Download this to test the app if you don't have a file."
+            help="Click to download a sample of the test data to try out the app."
         )
     else:
-        # Debugging Message: If you see this, the file is missing!
-        st.warning("⚠️ 'airline_data.csv' not found. Please upload it to GitHub.")
+        st.warning("⚠️ 'test_data.csv' not found. Please ensure it is uploaded to GitHub.")
 
 st.markdown("---")
 
@@ -68,7 +70,6 @@ if uploaded_file is not None:
             df_clean['Arrival Delay in Minutes'] = df_clean['Arrival Delay in Minutes'].fillna(df_clean['Arrival Delay in Minutes'].mean())
 
         # Load Saved Encoders & Scaler
-        # We use try/except to handle cases where models might be missing
         try:
             label_encoders = joblib.load('model/label_encoders.pkl')
             scaler = joblib.load('model/scaler.pkl')
@@ -96,7 +97,6 @@ if uploaded_file is not None:
         X_scaled = scaler.transform(X)
 
         # 3. Load Model
-        # File name logic: "Random Forest" -> "model/Random_Forest.pkl"
         model_filename = f"model/{model_name.replace(' ', '_')}.pkl"
         
         try:
