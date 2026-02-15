@@ -126,7 +126,8 @@ if uploaded_file is not None:
                 ("MCC", matthews_corrcoef(y_true, y_pred))
             ]
             for col, (label, val) in zip(cols, metrics):
-                col.metric(label, f"{val:.1%}" if label == "Accuracy" else f"{val:.3f}")
+                # FIXED: Now all metrics use .3f (3 decimal points)
+                col.metric(label, f"{val:.3f}")
 
         st.divider()
 
